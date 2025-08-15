@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pokémon Spawn Search</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root { color-scheme: dark light; }
+    html, body { height: 100%; }
+    body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", sans-serif; }
+    .card { @apply rounded-2xl shadow-lg p-6 bg-white/75 dark:bg-slate-900/70 backdrop-blur border border-slate-200/40 dark:border-white/10; }
+    .pill { @apply inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium border; }
+    .kbd { @apply border px-1.5 py-0.5 rounded text-xs bg-slate-100 dark:bg-slate-800; }
+    .mono { font-variant-ligatures: none; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+  </style>
+</head>
+<body class="min-h-full bg-gradient-to-b from-indigo-50 to-sky-50 dark:from-slate-900 dark:to-slate-950 text-slate-900 dark:text-slate-100">
+  <header class="max-w-5xl mx-auto px-4 pt-10 pb-6">
+    <h1 class="text-3xl sm:text-4xl font-bold tracking-tight">Pokémon Spawn Search</h1>
+    <p class="mt-2 text-slate-600 dark:text-slate-300">Type a Pokémon name to load its JSON and see spawning conditions. Filenames must match the Pokémon name (e.g., <span class="mono">arceus.json</span>).</p>
+  </header>
+
+  <main class="max-w-5xl mx-auto px-4 pb-16">
+    <section class="card">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <label for="name" class="sr-only">Pokémon</label>
+        <input id="name" type="text" inputmode="latin-name" placeholder="e.g., arceus" class="w-full sm:max-w-sm rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        <div class="flex gap-2">
+          <button id="searchBtn" class="rounded-xl bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-semibold px-5 py-3">Search</button>
+          <button id="clearBtn" class="rounded-xl border border-slate-300 dark:border-slate-700 px-5 py-3">Clear</button>
+        </div>
+      </div>
+      <p class="mt-2 text-sm text-slate-500">Press <span class="kbd">Enter</span> to search. Looks for <span class="mono">/data/&lt;name&gt;.json</span> by default.</p>
+    </section>
+
+    <section id="result" class="mt-6"></section>
+  </main>
+
+  <template id="tmpl">
+    <article class="card">
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <h2 class="text-2xl font-semibold capitalize" data-field="pokemonTitle">—</h2>
+          <div class="mt-2 flex flex-wrap gap-2 text-xs">
+            <span class="pill border-slate-300 dark:border-slate-700" data-field="enabledPill"></span>
+            <span class="pill border-slate-300 dark:border-slate-700" data-field="modsPill"></span>
+          </div>
+        </div>
+        <code class="mono text-xs text-slate-500">from <span data-field="sourcePath"></span></code>
+      </div>
+
+      <div class="mt-6 space-y-6" data-field="spawnsContainer"></div>
+    </article>
+  </template>
+
+  <template id="spawnCard">
+    <div class="rounded-xl border border-slate-200 dark:border-white/10 p-4">
+      <div class="flex flex-wrap items-center gap-2 text-sm">
+        <span class="pill border-slate-300 dark:border-slate-700"><strong class="mr-1">ID</strong><span data-field="id"></span></span>
+        <span class="pill border-slate-300 dark:border-slate-700"><strong class="mr-1">Context</strong><span data-field="context"></span></span>
+        <span class="pill border-slate-300 dark:border-slate-700"><strong class="mr-1">Bucket</strong><span data-field="bucket"></span></span>
+        <span class="pill border-slate-300 dark:border-slate-700"><strong class="mr-1">Level</strong><span data-field="level"></span></span>
+        <span class="pill border-slate-300 dark:border-slate-700"><strong class="mr-1">Weight</strong><span data-field="weight"></span></span>
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-4 mt-4">
+        <div>
+          <h3 class="font-semibold">Presets</h3>
+          <ul class="mt-2 list-disc list-inside text-sm" data-field="presets"></ul>
+        </div>
+        <div>
+          <h3 class="font-semibold">Base Condition</h3>
+          <div class="mt-2 text-sm" data-field="condition"></div>
+        </div>
+      </div>
+
+      <div class="mt-4">
+        <h3 class="font-semibold">Weight Multipliers</h3>
+        <div data-field="multipliers"></div>
+      </div>
+    </div>
+  </template>
+
+  <script>
+    // ---------- Configuration ----------
+    const DATA_ROOT = "/data"; // change if your JSONs are elsewhere
+
+    // Optional demo data (used if fetch fails in preview or local file mode)
+    const DEMO = {
+      name: "arceus",
+      path: "demo/arceus.json",
+      data: {
+        "enabled": true,
+        "neededInstalledMods": [],
+        "neededUninstalledMods": [],
+        "spawns": [
+          {
+            "id": "arceus-1T",
+            "pokemon": "arceus",
+            "presets": ["natural", "wild"],
+            "type": "pokemon",
+            "context": "grounded",
+            "bucket": "ultra-rare",
+            "level": "80",
+            "weight": 0.05,
+            "weightMultipliers": [
+              { "multiplier": 3.0, "condition": { "timeRange": "night" } },
+              { "multiplier": 2.0, "condition": { "isThundering": true } },
+              { "multiplier": 2.0, "condition": { "minY": 100 } },
+              { "multiplier": 2.0, "condition": { "minY": 200 } },
+              { "multiplier": 2.0, "condition": { "minY": 300 } }
+            ],
+            "condition": {
+              "minY": 64,
+              "canSeeSky": true,
+              "biomes": ["#cobblemon:is_overworld"]
+            }
+          }
+        ]
+      }
+    };
+
+    // ---------- Utilities ----------
+    const $ = (sel, root = document) => root.querySelector(sel);
+    const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+
+    function normalizeName(raw) {
+      return raw
+        .toLowerCase()
+        .normalize('NFKD')
+        .replace(/[^a-z0-9\-\s]/g, '')
+        .replace(/\s+/g, '-')
+        .trim();
+    }
+
+    function pretty(value) {
+      if (value === null || value === undefined) return '<span class="text-slate-400">—</span>';
+      if (Array.isArray(value)) return `<span class="mono">[${value.map(v => JSON.stringify(v)).join(', ')}]</span>`;
+      if (typeof value === 'object') return `<pre class="mono text-xs bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-white/10 rounded-lg p-2 overflow-auto">${JSON.stringify(value, null, 2)}</pre>`;
+      if (typeof value === 'boolean') return value ? 'true' : 'false';
+      return String(value);
+    }
+
+    function renderKeyVals(obj) {
+      if (!obj || typeof obj !== 'object') return pretty(obj);
+      const entries = Object.entries(obj);
+      if (!entries.length) return '<span class="text-slate-400">(none)</span>';
+      return `<ul class="text-sm space-y-1">${entries.map(([k, v]) => `<li><span class="font-medium">${k}</span>: ${pretty(v)}</li>`).join('')}</ul>`;
+    }
+
+    function renderMultipliers(mults) {
+      if (!mults || !mults.length) return '<div class="text-slate-500 text-sm">(none)</div>';
+      return `
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm border-separate border-spacing-y-1">
+            <thead class="text-left">
+              <tr>
+                <th class="px-2 py-1">Multiplier</th>
+                <th class="px-2 py-1">Condition</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${mults.map(m => `
+                <tr class="align-top">
+                  <td class="px-2 py-1 mono">${m.multiplier}</td>
+                  <td class="px-2 py-1">${renderKeyVals(m.condition)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>`;
+    }
+
+    function createSpawnCard(spawn) {
+      const frag = document.importNode($("#spawnCard").content, true);
+      const map = {
+        id: spawn.id,
+        context: spawn.context,
+        bucket: spawn.bucket,
+        level: spawn.level,
+        weight: spawn.weight,
+      };
+      Object.entries(map).forEach(([field, val]) => {
+        const el = $(`[data-field="${field}"]`, frag);
+        if (el) el.textContent = val ?? '—';
+      });
+
+      const presetsEl = $("[data-field='presets']", frag);
+      presetsEl.innerHTML = (spawn.presets && spawn.presets.length)
+        ? spawn.presets.map(p => `<li class="mono">${p}</li>`).join("")
+        : '<li class="text-slate-500">(none)</li>';
+
+      const condEl = $("[data-field='condition']", frag);
+      condEl.innerHTML = renderKeyVals(spawn.condition);
+
+      const multEl = $("[data-field='multipliers']", frag);
+      multEl.innerHTML = renderMultipliers(spawn.weightMultipliers);
+
+      return frag;
+    }
+
+    function renderResult(name, path, json) {
+      const host = $("#result");
+      host.innerHTML = "";
+      const frag = document.importNode($("#tmpl").content, true);
+      $("[data-field='pokemonTitle']", frag).textContent = name;
+      $("[data-field='sourcePath']", frag).textContent = path;
+
+      $("[data-field='enabledPill']", frag).innerHTML = `<strong class='mr-1'>Enabled</strong>${json.enabled ? 'true' : 'false'}`;
+      const modsNeeded = [...(json.neededInstalledMods || []), ...(json.neededUninstalledMods || [])];
+      $("[data-field='modsPill']", frag).innerHTML = `<strong class='mr-1'>Mods</strong>${modsNeeded.length ? modsNeeded.join(', ') : 'none'}`;
+
+      const spawnsWrap = $("[data-field='spawnsContainer']", frag);
+      if (Array.isArray(json.spawns) && json.spawns.length) {
+        json.spawns.forEach(spawn => spawnsWrap.appendChild(createSpawnCard(spawn)));
+      } else {
+        spawnsWrap.innerHTML = '<p class="text-slate-500">No spawns found.</p>';
+      }
+
+      host.appendChild(frag);
+    }
+
+    async function loadPokemon(rawName) {
+      const name = normalizeName(rawName);
+      if (!name) return;
+      const path = `${DATA_ROOT}/${name}.json`;
+
+      try {
+        const res = await fetch(path, { cache: 'no-store' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        renderResult(name, path, json);
+      } catch (err) {
+        // Fallback to demo if the request fails (useful for preview / local file mode)
+        console.warn(`Failed to load ${path}:`, err);
+        if (name === DEMO.name) {
+          renderResult(name, DEMO.path, DEMO.data);
+          toast(`Loaded demo data for “${name}”. Place ${name}.json in ${DATA_ROOT}/ to use your own file.`);
+        } else {
+          errorMsg(`Could not load <span class="mono">${path}</span>. Ensure the file exists and is publicly readable.`);
+        }
+      }
+    }
+
+    // ---------- UI wiring ----------
+    const input = $("#name");
+    const searchBtn = $("#searchBtn");
+    const clearBtn = $("#clearBtn");
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        loadPokemon(input.value);
+      }
+    });
+    searchBtn.addEventListener('click', () => loadPokemon(input.value));
+    clearBtn.addEventListener('click', () => {
+      input.value = '';
+      $("#result").innerHTML = '';
+      input.focus();
+    });
+
+    // ---------- Toast / error helpers ----------
+    function toast(html) {
+      const el = document.createElement('div');
+      el.className = 'fixed left-1/2 -translate-x-1/2 top-4 z-50 bg-slate-900 text-white px-4 py-2 rounded-xl shadow-lg';
+      el.innerHTML = html;
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 3000);
+    }
+
+    function errorMsg(html) {
+      const host = $("#result");
+      host.innerHTML = `<div class='card border-red-300 dark:border-red-900/60'><p class='text-red-700 dark:text-red-300'>${html}</p><p class='text-sm mt-2 text-slate-500'>Tip: filenames are case-insensitive here but must match your server files: <span class='mono'>(/data/&lt;name&gt;.json)</span>.</p></div>`;
+    }
+
+    // Populate with demo name for quick try
+    input.value = 'arceus';
+  </script>
+</body>
+</html>
