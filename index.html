@@ -87,7 +87,13 @@
 
   <script>
     // ---------- Configuration ----------
-    const DATA_ROOT = "PokemonSpawnSearch/data"; // change if your JSONs are elsewhere
+    // For GitHub Pages, compute a BASE path that works for both user and project pages.
+// If your site is at https://<user>.github.io/<repo>/, BASE will be "/<repo>/".
+// If it's at https://<user>.github.io/, BASE will be "/".
+const BASE = location.pathname.endsWith('/')
+  ? location.pathname
+  : location.pathname.replace(/[^/]+$/, '/');
+const DATA_ROOT = `${BASE}data`; // place your JSONs in a sibling /data folder
 
     // Optional demo data (used if fetch fails in preview or local file mode)
     const DEMO = {
@@ -246,7 +252,17 @@
       }
     }
 
-    // ---------- UI wiring ----------
+    // Small helper hint for GitHub Pages paths
+window.addEventListener('DOMContentLoaded', () => {
+  const card = document.querySelector('main .card');
+  if (!card) return;
+  const p = document.createElement('p');
+  p.className = 'mt-2 text-xs text-slate-500';
+  p.innerHTML = `Data root resolved to <code class="mono">${DATA_ROOT}</code>. Test a JSON directly: <a class="underline" href="${DATA_ROOT}/arceus.json">${DATA_ROOT}/arceus.json</a>`;
+  card.appendChild(p);
+});
+
+// ---------- UI wiring ----------
     const input = $("#name");
     const searchBtn = $("#searchBtn");
     const clearBtn = $("#clearBtn");
